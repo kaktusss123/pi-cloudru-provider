@@ -45,12 +45,6 @@ Alternative — from the package tarball:
 omp plugin install /path/to/pi-cloudru-provider-1.0.3.tgz
 ```
 
-From the package tarball:
-
-```bash
-omp plugin install /path/to/pi-cloudru-provider-1.0.3.tgz
-```
-
 Then fully restart `omp`.
 
 To refresh model discovery explicitly:
