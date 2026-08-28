@@ -31,7 +31,19 @@ apiKey: "CLOUDRU_API_KEY"
 
 OMP interprets this as an environment-variable **name**. Do not change it to `$CLOUDRU_API_KEY`; OMP treats that legacy Pi syntax as a literal token.
 
-## Install
+From the private git repository — requires only SSH access to GitHub:
+
+```bash
+omp plugin install git@github.com:kaktusss123/pi-cloudru-provider.git
+```
+
+`omp install` is an alias for the same command. To pin a specific ref, use the shorthand form: `omp plugin install github:kaktusss123/pi-cloudru-provider#<branch|tag>`.
+
+Alternative — from the package tarball:
+
+```bash
+omp plugin install /path/to/pi-cloudru-provider-1.0.3.tgz
+```
 
 From the package tarball:
 
