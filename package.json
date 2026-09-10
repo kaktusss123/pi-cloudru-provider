@@ -1,6 +1,6 @@
 {
   "name": "pi-cloudru-provider",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Native Cloud.ru Foundation Models provider for Pi 0.85.1+.",
   "type": "module",
   "license": "MIT",
@@ -23,6 +23,9 @@
       "./extensions"
     ]
   },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.85.1"
+  },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
@@ -36,7 +39,6 @@
     "check:types": "tsc --noEmit"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.85.1",
     "@earendil-works/pi-coding-agent": "0.85.1",
     "@types/node": "^22.19.0",
     "typescript": "^5.9.3",
