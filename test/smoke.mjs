@@ -1,39 +1,89 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import cloudRuProvider from "../extensions/cloudru-provider.ts";
 import { mapCatalog } from "../src/catalog.ts";
-import { applyNativeReasoningWire } from "../src/wire.ts";
+import { FALLBACK_CATALOG } from "../src/fallback-catalog.ts";
+import { applyNativePiRequest } from "../src/native-request.ts";
 
-const fixture = JSON.parse(fs.readFileSync(new URL("../fixtures/cloudru-models.json", import.meta.url), "utf8"));
-const models = mapCatalog(fixture, { rubPerUsd: 80, defaultMaxTokens: 16384 });
-assert.equal(models.length, 11);
+const registered = [];
+const handlers = new Map();
+const pi = {
+  registerProvider(provider) {
+    registered.push(provider);
+  },
+  on(event, handler) {
+    handlers.set(event, handler);
+  },
+  getThinkingLevel() {
+    return "low";
+  },
+};
 
-const kimi = models.find((m) => m.id === "moonshotai/Kimi-K2.6");
-assert.ok(kimi);
-assert.equal(kimi.compat.supportsReasoningEffort, false);
-assert.equal(kimi.compat.thinkingFormat, "zai");
-assert.deepEqual(kimi.thinking.efforts, ["high"]);
-assert.deepEqual(
-  applyNativeReasoningWire({ reasoning_effort: "enabled", messages: [] }, kimi.id, "high"),
-  { messages: [], thinking: { type: "enabled" } },
-);
-assert.deepEqual(
-  applyNativeReasoningWire({ reasoning_effort: "high" }, kimi.id, "off"),
-  { thinking: { type: "disabled" } },
-);
+cloudRuProvider(pi);
+assert.equal(registered.length, 1);
+const provider = registered[0];
+assert.equal(provider.id, "cloudru");
+assert.equal(provider.name, "Cloud.ru");
+assert.equal(provider.getModels().some((model) => model.id === "moonshotai/Kimi-K2.6"), true);
+assert.equal(typeof provider.refreshModels, "function");
+assert.equal(typeof provider.stream, "function");
 
-const m3 = models.find((m) => m.id === "MiniMaxAI/MiniMax-M3");
+const m3 = mapCatalog(FALLBACK_CATALOG, {
+  baseUrl: "https://example.test/v1",
+  defaultMaxTokens: 16_384,
+}).find((model) => model.id === "MiniMaxAI/MiniMax-M3");
 assert.ok(m3);
-assert.deepEqual(applyNativeReasoningWire({ reasoning_effort: "low" }, m3.id, "low"), {
+assert.deepEqual(applyNativePiRequest({ model: m3.id, reasoning_effort: "low" }, m3.id, "low"), {
+  model: "MiniMaxAI/MiniMax-M3",
   thinking: { type: "adaptive" },
 });
-assert.deepEqual(applyNativeReasoningWire({ reasoning_effort: "high" }, m3.id, "high"), {
+
+const m3Handler = handlers.get("before_provider_request");
+const transformed = m3Handler(
+  { type: "before_provider_request", payload: { model: m3.id, reasoning_effort: "high" } },
+  { model: m3, thinkingLevel: "high" },
+);
+assert.deepEqual(transformed, {
+  model: "MiniMaxAI/MiniMax-M3",
   thinking: { type: "enabled" },
 });
+const replayModel = mapCatalog(FALLBACK_CATALOG, {
+  baseUrl: "https://example.test/v1",
+  defaultMaxTokens: 16_384,
+}).find((model) => model.id === "moonshotai/Kimi-K2.6");
+assert.ok(replayModel);
 
-const ds = models.find((m) => m.id === "deepseek-ai/DeepSeek-V4-Pro");
-assert.deepEqual(ds.thinking.efforts, ["high", "max"]);
-assert.deepEqual(applyNativeReasoningWire({ reasoning_effort: "max" }, ds.id, "max"), {
-  reasoning_effort: "max",
-});
+let replayPayload;
+const replayContext = {
+  messages: [
+    { role: "user", content: "call the tool", timestamp: Date.now() },
+    {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "plan", thinkingSignature: "reasoning_content" },
+        { type: "toolCall", id: "call-1", name: "tool", arguments: { value: 1 } },
+      ],
+      api: "openai-completions",
+      provider: "cloudru",
+      model: replayModel.id,
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "toolUse",
+      timestamp: Date.now(),
+    },
+    { role: "toolResult", toolCallId: "call-1", toolName: "tool", content: [{ type: "text", text: "done" }], isError: false, timestamp: Date.now() },
+  ],
+};
+const fakeFetch = async (_url, init) => {
+  replayPayload = JSON.parse(init.body);
+  return new Response("data: [DONE]\n\n", { status: 200, headers: { "content-type": "text/event-stream" } });
+};
+for await (const _event of openAICompletionsApi().stream(replayModel, replayContext, {
+  apiKey: "test-key",
+  fetch: fakeFetch,
+  reasoningEffort: "high",
+})) {}
+const replayedAssistant = replayPayload.messages.find((message) => message.role === "assistant");
+assert.equal(replayedAssistant.reasoning_content, "plan");
+assert.equal(replayedAssistant.tool_calls[0].id, "call-1");
 
-console.log("smoke ok: model discovery mapping + native reasoning wire encoding");
+console.log("smoke ok: native registration, exact M3 request mapping, and OpenAI replay");

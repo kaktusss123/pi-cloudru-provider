@@ -1,96 +1,71 @@
 # pi-cloudru-provider
 
-Production Cloud.ru Foundation Models provider for **Oh My Pi (OMP)**.
+Native Cloud.ru Foundation Models provider for **Pi**, with minimum supported host version `0.85.1`.
 
-## What it does
+The package provides:
 
-- Dynamically discovers models from `https://foundation-models.api.cloud.ru/v1/models`.
-- Keeps only native Cloud.ru tool-capable chat LLMs:
-  - `metadata.provider === "cloud.ru"`
-  - `metadata.type === "llm"`
-  - `function_calling === true`
-  - `/v1/chat/completions` endpoint present
-- Maps model name, context window, text/image modalities, reasoning capabilities, and token prices into OMP.
-- Uses OMP-native `fetchDynamicModels`, so discovery and inference use the **same resolved credential**.
-- Includes a bundled fallback catalog for offline/startup resilience.
-- Uses OMP-native reasoning metadata. MiniMax M3 exposes only `low -> adaptive`, `high -> enabled`, plus OMP's separate `off -> disabled` state.
+- Pi-native OpenAI Chat Completions streaming and tool calls;
+- exact case-sensitive Cloud.ru model IDs, including `moonshotai/Kimi-K2.6`;
+- a bundled fallback catalog for startup without network access;
+- dynamic `/models` refresh through Pi's `refreshModels(context)`;
+- Pi credential resolution plus `CLOUDRU_API_KEY` fallback without direct auth-file access;
+- native Pi reasoning metadata for Kimi, GLM, MiniMax, Qwen, GPT-OSS, and DeepSeek.
+
+The OMP implementation is maintained separately in [`omp-cloudru-provider`](https://github.com/kaktusss123/omp-cloudru-provider). This package has no OMP manifest or OMP runtime dependency.
+
+## Install
+
+```bash
+pi install git:github.com/kaktusss123/pi-cloudru-provider
+```
+
+For a one-run test:
+
+```bash
+pi -e git:github.com/kaktusss123/pi-cloudru-provider
+```
 
 ## Authentication
 
-Set the raw Cloud.ru API token (do **not** include the `Bearer ` prefix):
+Configure the Cloud.ru API key through Pi's standard provider auth or the environment:
 
 ```bash
 export CLOUDRU_API_KEY='...'
 ```
 
-The provider registration intentionally uses:
+The native provider uses `$CLOUDRU_API_KEY` semantics. It never sends the literal string `CLOUDRU_API_KEY` as a bearer token. OAuth credentials are not treated as Cloud.ru API keys.
 
-```ts
-apiKey: "CLOUDRU_API_KEY"
-```
-
-OMP interprets this as an environment-variable **name**. Do not change it to `$CLOUDRU_API_KEY`; OMP treats that legacy Pi syntax as a literal token.
-
-From the private git repository — requires only SSH access to GitHub:
+## Configuration
 
 ```bash
-omp plugin install git@github.com:kaktusss123/pi-cloudru-provider.git
-```
-
-`omp install` is an alias for the same command. To pin a specific ref, use the shorthand form: `omp plugin install github:kaktusss123/pi-cloudru-provider#<branch|tag>`.
-
-Alternative — from the package tarball:
-
-```bash
-omp plugin install /path/to/pi-cloudru-provider-1.0.3.tgz
-```
-
-Then fully restart `omp`.
-
-To refresh model discovery explicitly:
-
-```bash
-omp models refresh cloudru
-```
-
-## Optional settings
-
-```bash
-# Override endpoint
 export CLOUDRU_BASE_URL='https://foundation-models.api.cloud.ru/v1'
-
-# Convert Cloud.ru RUB / 1M token prices to the USD unit expected by OMP.
-# Without this, OMP cost fields stay zero rather than mislabel RUB as USD.
 export CLOUDRU_RUB_PER_USD='80'
-
-# Used only when /models does not advertise a real output-token limit.
 export CLOUDRU_MAX_TOKENS='16384'
-
-# Discovery HTTP timeout.
 export CLOUDRU_DISCOVERY_TIMEOUT_MS='8000'
-
-# Disable network discovery and use the bundled fallback catalog.
 export CLOUDRU_OFFLINE='1'
 ```
 
-## Troubleshooting 403 Invalid authorization header format
+`CLOUDRU_RUB_PER_USD` is optional. Without it, Cloud.ru prices remain zero instead of being mislabeled as USD.
 
-Verify the installed provider contains:
+## Catalog filtering
 
-```ts
-apiKey: "CLOUDRU_API_KEY"
-```
+Only `/models` entries satisfying all of the following are registered:
 
-and **not**:
+- `metadata.provider === "cloud.ru"`;
+- `metadata.type === "llm"`;
+- `function_calling === true`;
+- `metadata.endpoints` contains `/v1/chat/completions`.
 
-```ts
-apiKey: "$CLOUDRU_API_KEY"
-```
+Live discovery replaces the fallback catalog only after a successful refresh. Invalid responses, empty filtered results, network failures, timeouts, missing credentials, and aborted refreshes never replace the last usable catalog.
 
-Safe shell check (does not print the secret):
+## Reasoning profiles
 
-```bash
-test -n "$CLOUDRU_API_KEY" \
-  && echo "CLOUDRU_API_KEY set (${#CLOUDRU_API_KEY} chars)" \
-  || echo "CLOUDRU_API_KEY missing"
-```
+- Kimi and GLM use `thinking.type`: `off -> disabled`, `high -> enabled`.
+- MiniMax M3 uses `disabled`, `adaptive`, and `enabled`.
+- MiniMax M2.5 and Qwen always-on profiles hide `off` without inventing effort values.
+- Qwen 3.5/3.6 uses `chat_template_kwargs.enable_thinking` and `preserve_thinking`.
+- GPT-OSS exposes only `low`, `medium`, and `high` `reasoning_effort`.
+- DeepSeek exposes only `high` and `max` and replays `reasoning_content`.
+- Unknown reasoning models stay reasoning-capable without guessed provider-specific controls.
+
+The provider does not implement its own retry or compaction behavior.

@@ -24,6 +24,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): CloudRuConfig 
     rubPerUsd: fx !== undefined && Number.isFinite(fx) && fx > 0 ? fx : undefined,
     defaultMaxTokens: Math.floor(positiveNumber(env.CLOUDRU_MAX_TOKENS, DEFAULT_MAX_TOKENS)),
     discoveryTimeoutMs: Math.floor(positiveNumber(env.CLOUDRU_DISCOVERY_TIMEOUT_MS, DEFAULT_TIMEOUT_MS)),
-    offline: /^(1|true|yes)$/i.test(env.OMP_OFFLINE || env.PI_OFFLINE || env.CLOUDRU_OFFLINE || ""),
+    offline: /^(1|true|yes)$/i.test(env.PI_OFFLINE || env.CLOUDRU_OFFLINE || ""),
   };
 }

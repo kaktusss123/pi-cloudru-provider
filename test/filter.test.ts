@@ -21,7 +21,7 @@ describe("catalog filter", () => {
     expect(isNativeToolLlm(model)).toBe(false);
   });
 
-  it("rejects embeddings/rerankers and models without function calling", () => {
+  it("rejects embeddings, missing function calling, and non-chat endpoints", () => {
     const embedding = base();
     embedding.metadata!.type = "embedder";
     expect(isNativeToolLlm(embedding)).toBe(false);
@@ -29,5 +29,9 @@ describe("catalog filter", () => {
     const noTools = base();
     noTools.function_calling = false;
     expect(isNativeToolLlm(noTools)).toBe(false);
+
+    const completionOnly = base();
+    completionOnly.metadata!.endpoints = [{ path: "/v1/completions" }];
+    expect(isNativeToolLlm(completionOnly)).toBe(false);
   });
 });

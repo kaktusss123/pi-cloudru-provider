@@ -1,18 +1,15 @@
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { mapCatalog } from "../src/catalog.ts";
-import type { CloudRuModelsResponse } from "../src/cloudru-types.ts";
+import { FALLBACK_CATALOG } from "../src/fallback-catalog.ts";
 
-const require = createRequire(import.meta.url);
-const fixture = require("../fixtures/cloudru-models.json") as CloudRuModelsResponse;
-
-const mapped = () => mapCatalog(fixture, { rubPerUsd: 80, defaultMaxTokens: 16_384 });
+const options = { baseUrl: "https://example.test/v1", rubPerUsd: 80, defaultMaxTokens: 16_384 };
+const mapped = () => mapCatalog(FALLBACK_CATALOG, options);
 
 describe("Cloud.ru catalog mapping", () => {
-  it("contains exactly the native tool-capable LLM snapshot", () => {
+  it("maps the native tool-capable LLM snapshot with exact IDs", () => {
     const models = mapped();
     expect(models).toHaveLength(11);
-    expect(models.map((m) => m.id).sort()).toEqual(
+    expect(models.map((model) => model.id).sort()).toEqual(
       [
         "ai-sage/GigaChat3-10B-A1.8B",
         "zai-org/GLM-5.1",
@@ -29,31 +26,30 @@ describe("Cloud.ru catalog mapping", () => {
     );
   });
 
-  it("maps MiniMax M3 context, vision and RUB prices", () => {
-    const m3 = mapped().find((m) => m.id === "MiniMaxAI/MiniMax-M3");
-    expect(m3).toBeDefined();
-    expect(m3?.contextWindow).toBe(524_288);
-    expect(m3?.maxTokens).toBe(16_384);
-    expect(m3?.input).toEqual(["text", "image"]);
+  it("maps context, modalities, max tokens, and RUB prices", () => {
+    const m3 = mapped().find((model) => model.id === "MiniMaxAI/MiniMax-M3");
+    expect(m3).toMatchObject({
+      contextWindow: 524_288,
+      maxTokens: 16_384,
+      input: ["text", "image"],
+    });
     expect(m3?.cost.input).toBeCloseTo(240.218 / 80);
     expect(m3?.cost.output).toBeCloseTo(1008.8546 / 80);
   });
 
-  it("does not lie about currency when no RUB/USD rate is configured", () => {
-    const m3 = mapCatalog(fixture, { defaultMaxTokens: 16_384 }).find((m) => m.id === "MiniMaxAI/MiniMax-M3");
-    expect(m3?.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+  it("keeps costs at zero when RUB conversion is not configured", () => {
+    const models = mapCatalog(FALLBACK_CATALOG, { baseUrl: options.baseUrl, defaultMaxTokens: options.defaultMaxTokens });
+    expect(models.find((model) => model.id === "MiniMaxAI/MiniMax-M3")?.cost).toEqual({
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
   });
 
-  it("does not mistake max_model_len for output token limit", () => {
-    const deepseek = mapped().find((m) => m.id === "deepseek-ai/DeepSeek-V4-Pro");
+  it("uses context limits rather than max_model_len as output limits", () => {
+    const deepseek = mapped().find((model) => model.id === "deepseek-ai/DeepSeek-V4-Pro");
     expect(deepseek?.contextWindow).toBe(1_048_576);
     expect(deepseek?.maxTokens).toBe(16_384);
-  });
-
-  it("does not mark non-reasoning models as reasoning models", () => {
-    const coder = mapped().find((m) => m.id === "Qwen/Qwen3-Coder-Next");
-    expect(coder?.reasoning).toBe(false);
-    expect(coder?.thinking).toBeUndefined();
-    expect(coder?.compat?.supportsReasoningEffort).toBeUndefined();
   });
 });

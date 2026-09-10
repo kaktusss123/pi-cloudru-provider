@@ -1,25 +1,31 @@
-import type { CloudRuModel, CloudRuModelsResponse, OmpProviderModel } from "./cloudru-types.ts";
-import { buildThinking } from "./reasoning.ts";
+import type { Model } from "@earendil-works/pi-ai";
+import type { CloudRuModel, CloudRuModelsResponse } from "./cloudru-types.ts";
 import { modelCompat } from "./compat.ts";
+import { thinkingLevelMap } from "./reasoning.ts";
+
+export interface MapCatalogOptions {
+  baseUrl: string;
+  rubPerUsd?: number;
+  defaultMaxTokens: number;
+}
 
 export function isNativeToolLlm(model: CloudRuModel): boolean {
-  const md = model.metadata;
+  const metadata = model.metadata;
   return (
-    md?.provider === "cloud.ru" &&
-    md?.type === "llm" &&
+    metadata?.provider === "cloud.ru" &&
+    metadata.type === "llm" &&
     model.function_calling === true &&
-    Array.isArray(md.endpoints) &&
-    md.endpoints.some((endpoint) => endpoint.path === "/v1/chat/completions")
+    Array.isArray(metadata.endpoints) &&
+    metadata.endpoints.some((endpoint) => endpoint.path === "/v1/chat/completions")
   );
 }
 
-function numberOrZero(value: unknown): number {
+function nonNegativeNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
-function rubToUsd(value: unknown, rubPerUsd?: number): number {
-  if (!rubPerUsd) return 0;
-  return numberOrZero(value) / rubPerUsd;
+function rubToUsd(value: unknown, rubPerUsd: number | undefined): number {
+  return rubPerUsd ? nonNegativeNumber(value) / rubPerUsd : 0;
 }
 
 function contextWindow(model: CloudRuModel): number {
@@ -43,43 +49,39 @@ function advertisedOutputLimit(model: CloudRuModel): number | undefined {
 }
 
 function inputModalities(model: CloudRuModel): ("text" | "image")[] {
-  const advertised = model.metadata?.input_modalities ?? [];
-  return advertised.includes("image") ? ["text", "image"] : ["text"];
+  return model.metadata?.input_modalities?.includes("image") ? ["text", "image"] : ["text"];
 }
 
-export interface MapCatalogOptions {
-  rubPerUsd?: number;
-  defaultMaxTokens: number;
-}
-
-export function mapCloudRuModel(model: CloudRuModel, options: MapCatalogOptions): OmpProviderModel {
-  const md = model.metadata ?? {};
-  const reasoning = model.reasoning === true;
-  const thinking = buildThinking(model);
+export function mapCloudRuModel(model: CloudRuModel, options: MapCatalogOptions): Model<"openai-completions"> {
+  const metadata = model.metadata ?? {};
+  const context = contextWindow(model);
   const compat = modelCompat(model);
-  return {
+  const mapped: Model<"openai-completions"> = {
     id: model.id,
-    name: md.name || model.id,
-    reasoning,
-    ...(thinking ? { thinking } : {}),
+    name: metadata.name || model.id,
+    api: "openai-completions",
+    provider: "cloudru",
+    baseUrl: options.baseUrl,
+    reasoning: model.reasoning === true,
+    thinkingLevelMap: thinkingLevelMap(model),
     input: inputModalities(model),
     cost: {
-      input: rubToUsd(md.prompt_tokens_cost, options.rubPerUsd),
-      output: rubToUsd(md.generated_tokens_cost, options.rubPerUsd),
-      cacheRead: rubToUsd(md.cache_read_tokens_cost, options.rubPerUsd),
-      cacheWrite: rubToUsd(md.cache_write_tokens_cost, options.rubPerUsd),
+      input: rubToUsd(metadata.prompt_tokens_cost, options.rubPerUsd),
+      output: rubToUsd(metadata.generated_tokens_cost, options.rubPerUsd),
+      cacheRead: rubToUsd(metadata.cache_read_tokens_cost, options.rubPerUsd),
+      cacheWrite: rubToUsd(metadata.cache_write_tokens_cost, options.rubPerUsd),
     },
-    contextWindow: contextWindow(model),
-    maxTokens: Math.min(advertisedOutputLimit(model) ?? options.defaultMaxTokens, contextWindow(model)),
-    ...(compat ? { compat } : {}),
+    contextWindow: context,
+    maxTokens: Math.min(advertisedOutputLimit(model) ?? options.defaultMaxTokens, context),
   };
+  if (compat) mapped.compat = compat;
+  return mapped;
 }
 
-export function mapCatalog(payload: CloudRuModelsResponse, options: MapCatalogOptions): OmpProviderModel[] {
+export function mapCatalog(payload: CloudRuModelsResponse, options: MapCatalogOptions): Model<"openai-completions">[] {
   if (!payload || !Array.isArray(payload.data)) {
     throw new Error("Cloud.ru /models returned an invalid payload: expected { data: [] }");
   }
-
   return payload.data
     .filter(isNativeToolLlm)
     .map((model) => mapCloudRuModel(model, options))

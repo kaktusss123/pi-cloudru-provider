@@ -1,13 +1,12 @@
 {
   "name": "pi-cloudru-provider",
-  "version": "1.0.3",
-  "description": "Production Cloud.ru Foundation Models provider for Oh My Pi with dynamic discovery, model-native reasoning transport, modalities, context limits, and pricing.",
+  "version": "1.0.0",
+  "description": "Native Cloud.ru Foundation Models provider for Pi 0.85.1+.",
   "type": "module",
   "license": "MIT",
   "keywords": [
-    "omp-plugin",
-    "omp-extension",
-    "oh-my-pi",
+    "pi-package",
+    "pi-extension",
     "cloud.ru",
     "llm",
     "coding-agent"
@@ -19,23 +18,28 @@
     "README.md",
     "LICENSE"
   ],
-  "omp": {
+  "pi": {
     "extensions": [
-      "./extensions/cloudru-provider.ts"
+      "./extensions"
     ]
   },
   "peerDependencies": {
-    "@oh-my-pi/pi-coding-agent": "*"
+    "@earendil-works/pi-ai": ">=0.85.1",
+    "@earendil-works/pi-coding-agent": ">=0.85.1"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.19.0"
   },
   "scripts": {
     "test": "vitest run",
-    "smoke": "node --experimental-strip-types test/smoke.mjs"
+    "smoke": "node --experimental-strip-types test/smoke.mjs",
+    "check:types": "tsc --noEmit"
   },
   "devDependencies": {
-    "typescript": "^5.9.0",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
 }

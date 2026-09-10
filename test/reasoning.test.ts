@@ -1,79 +1,78 @@
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import type { CloudRuModelsResponse } from "../src/cloudru-types.ts";
-import { buildThinking } from "../src/reasoning.ts";
+import { mapCatalog } from "../src/catalog.ts";
+import { FALLBACK_CATALOG } from "../src/fallback-catalog.ts";
+import { applyNativePiRequest } from "../src/native-request.ts";
 import { modelCompat } from "../src/compat.ts";
-import { applyNativeReasoningWire } from "../src/wire.ts";
+import { thinkingLevelMap } from "../src/reasoning.ts";
 
-const require = createRequire(import.meta.url);
-const fixture = require("../fixtures/cloudru-models.json") as CloudRuModelsResponse;
-const byId = (id: string) => fixture.data.find((m) => m.id === id)!;
+const options = { baseUrl: "https://example.test/v1", defaultMaxTokens: 16_384 };
+const source = (id: string) => FALLBACK_CATALOG.data.find((model) => model.id === id)!;
+const mapped = (id: string) => mapCatalog(FALLBACK_CATALOG, options).find((model) => model.id === id)!;
 
-describe("reasoning profiles and wire encoding", () => {
-  it("maps MiniMax M3 UI levels to thinking.type, never reasoning_effort", () => {
-    const model = byId("MiniMaxAI/MiniMax-M3");
-    expect(buildThinking(model)).toEqual({
-      mode: "effort",
-      efforts: ["low", "high"],
-      defaultLevel: "low",
-      requiresEffort: false,
-    });
-    expect(applyNativeReasoningWire({ reasoning_effort: "low" }, model.id, "low")).toEqual({
+describe("Pi-native reasoning profiles", () => {
+  it("maps M3 to disabled/adaptive/enabled and fixes Pi's native adaptive gap", () => {
+    const model = source("MiniMaxAI/MiniMax-M3");
+    expect(thinkingLevelMap(model)).toMatchObject({ off: "disabled", low: "adaptive", high: "enabled" });
+    expect(modelCompat(model)).toMatchObject({ thinkingFormat: "zai", supportsReasoningEffort: false });
+    expect(applyNativePiRequest({ reasoning_effort: "low" }, model.id, "low")).toEqual({
       thinking: { type: "adaptive" },
     });
-    expect(applyNativeReasoningWire({ reasoning_effort: "high" }, model.id, "high")).toEqual({
+    expect(applyNativePiRequest({ reasoning_effort: "high" }, model.id, "high")).toEqual({
       thinking: { type: "enabled" },
     });
-    expect(applyNativeReasoningWire({ reasoning_effort: "minimal" }, model.id, "off")).toEqual({
+    expect(applyNativePiRequest({ reasoning_effort: "minimal" }, model.id, "off")).toEqual({
       thinking: { type: "disabled" },
     });
   });
 
-  it("encodes Kimi K2.6 with thinking.type instead of reasoning_effort=enabled", () => {
-    const model = byId("moonshotai/Kimi-K2.6");
-    expect(buildThinking(model)).toEqual({
-      mode: "effort",
-      efforts: ["high"],
-      defaultLevel: "high",
-      requiresEffort: false,
-    });
-    expect(modelCompat(model)).toMatchObject({
+  it("uses native Zai controls and reasoning replay for Kimi", () => {
+    const model = mapped("moonshotai/Kimi-K2.6");
+    expect(model.id).toBe("moonshotai/Kimi-K2.6");
+    expect(model.thinkingLevelMap).toMatchObject({ off: "disabled", high: "enabled" });
+    expect(model.compat).toMatchObject({
       supportsReasoningEffort: false,
-      omitReasoningEffort: true,
       thinkingFormat: "zai",
-    });
-    expect(applyNativeReasoningWire({ reasoning_effort: "enabled", messages: [] }, model.id, "high")).toEqual({
-      messages: [],
-      thinking: { type: "enabled" },
-    });
-    expect(applyNativeReasoningWire({ reasoning_effort: "none" }, model.id, "off")).toEqual({
-      thinking: { type: "disabled" },
+      requiresReasoningContentOnAssistantMessages: true,
     });
   });
 
-  it("keeps the original DeepSeek V4 snapshot on high/max reasoning_effort", () => {
-    const model = byId("deepseek-ai/DeepSeek-V4-Pro");
-    expect(buildThinking(model)).toEqual({
-      mode: "effort",
-      efforts: ["high", "max"],
-      defaultLevel: "high",
-      requiresEffort: true,
+  it("restricts GPT-OSS and DeepSeek to evidenced effort values", () => {
+    expect(mapped("openai/gpt-oss-120b").thinkingLevelMap).toEqual({
+      off: null,
+      minimal: null,
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: null,
+      max: null,
     });
-    expect(applyNativeReasoningWire({ reasoning_effort: "max" }, model.id, "max")).toEqual({
-      reasoning_effort: "max",
+    expect(mapped("deepseek-ai/DeepSeek-V4-Pro").thinkingLevelMap).toEqual({
+      off: null,
+      minimal: null,
+      low: null,
+      medium: null,
+      high: "high",
+      xhigh: null,
+      max: "max",
+    });
+    expect(mapped("deepseek-ai/DeepSeek-V4-Pro").compat).toMatchObject({
+      supportsReasoningEffort: true,
+      requiresReasoningContentOnAssistantMessages: true,
     });
   });
 
-  it("keeps gpt-oss low/medium/high as real reasoning_effort values", () => {
-    const model = byId("openai/gpt-oss-120b");
-    expect(buildThinking(model)?.efforts).toEqual(["low", "medium", "high"]);
-    expect(applyNativeReasoningWire({ reasoning_effort: "medium" }, model.id, "medium")).toEqual({
-      reasoning_effort: "medium",
+  it("hides off for always-thinking M2.5 and Qwen without guessed efforts", () => {
+    expect(mapped("MiniMaxAI/MiniMax-M2.5").thinkingLevelMap).toEqual({ off: null });
+    expect(mapped("Qwen/Qwen3.5-397B-A17B").thinkingLevelMap).toEqual({ off: null });
+    expect(mapped("Qwen/Qwen3.5-397B-A17B").compat).toMatchObject({
+      thinkingFormat: "qwen-chat-template",
+      supportsReasoningEffort: false,
     });
   });
 
-  it("does not fabricate a control surface for always-reasoning M2.5/Qwen", () => {
-    expect(buildThinking(byId("MiniMaxAI/MiniMax-M2.5"))).toBeUndefined();
-    expect(buildThinking(byId("Qwen/Qwen3.5-397B-A17B"))).toBeUndefined();
+  it("leaves unknown reasoning models conservative", () => {
+    const unknown = { ...source("MiniMaxAI/MiniMax-M3"), id: "vendor/New-Reasoner" };
+    expect(thinkingLevelMap(unknown)).toBeUndefined();
+    expect(modelCompat(unknown)).toBeUndefined();
   });
 });
