@@ -86,4 +86,27 @@ const replayedAssistant = replayPayload.messages.find((message) => message.role 
 assert.equal(replayedAssistant.reasoning_content, "plan");
 assert.equal(replayedAssistant.tool_calls[0].id, "call-1");
 
+// Sanitizer: empty tools (openai-completions replay artifact) is dropped for every
+// cloudru model, non-M3 included; the payload otherwise passes through.
+const nonM3Payload = {
+  model: replayModel.id,
+  tools: [],
+  messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "data:image/png;base64,AA" } }] }],
+};
+const nonM3Result = m3Handler(
+  { type: "before_provider_request", payload: nonM3Payload },
+  { model: replayModel, thinkingLevel: "high" },
+);
+assert.equal("tools" in nonM3Result, false);
+assert.deepEqual(nonM3Result.messages[0].content, [
+  { type: "image_url", image_url: { url: "data:image/png;base64,AA" } },
+]);
+assert.equal("thinking" in nonM3Result, false);
+
+const m3EmptyTools = m3Handler(
+  { type: "before_provider_request", payload: { model: m3.id, tools: [] } },
+  { model: m3, thinkingLevel: "high" },
+);
+assert.deepEqual(m3EmptyTools, { model: "MiniMaxAI/MiniMax-M3", thinking: { type: "enabled" } });
+
 console.log("smoke ok: native registration, exact M3 request mapping, and OpenAI replay");

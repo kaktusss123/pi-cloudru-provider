@@ -1,6 +1,6 @@
 {
   "name": "pi-cloudru-provider",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Native Cloud.ru Foundation Models provider for Pi 0.85.1+.",
   "type": "module",
   "license": "MIT",
