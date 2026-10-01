@@ -23,9 +23,6 @@
       "./extensions"
     ]
   },
-  "dependencies": {
-    "@earendil-works/pi-ai": "0.85.1"
-  },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"

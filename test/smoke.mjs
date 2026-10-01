@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import cloudRuProvider from "../extensions/cloudru-provider.ts";
 import { mapCatalog } from "../src/catalog.ts";
 import { FALLBACK_CATALOG } from "../src/fallback-catalog.ts";

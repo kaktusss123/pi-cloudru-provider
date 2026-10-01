@@ -1,4 +1,4 @@
-import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import type { AuthContext, Credential, Model, Provider, RefreshModelsContext } from "@earendil-works/pi-ai";
 import { readConfig } from "./config.ts";
 import { discoverModels, resolveCloudRuCredential, storedProviderModels } from "./discovery.ts";
